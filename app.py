@@ -7,17 +7,22 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_google_genai import ChatGoogleGenerativeAI
 from dotenv import load_dotenv
+import os
 
 load_dotenv()
 
 app = FastAPI(title="Job Description RAG Assistant")
 
 # Load FAISS database
+
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 embeddings = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/all-MiniLM-L6-v2"
+    model_name="sentence-transformers/all-MiniLM-L6-v2",
+    model_kwargs={"device": "cpu"},
+    encode_kwargs={"batch_size": 1}
 )
 
-# Loading the previously saved FAISS vector database
 vector_store = FAISS.load_local(
     "faiss_index",
     embeddings,
