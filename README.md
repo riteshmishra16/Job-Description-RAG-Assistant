@@ -4,10 +4,10 @@ A Retrieval-Augmented Generation (RAG) application that answers questions about 
 
 ## Features
 
-* Retrieves relevant job information using semantic similarity search.
-* Uses FAISS as a vector database.
+* Retrieves relevant job information using TF-IDF and cosine similarity.
+* Uses LangChain Documents and RecursiveCharacterTextSplitter.
 * Generates context-based answers using Google Gemini.
-* Uses LangChain to build the RAG pipeline.
+* Uses LangChain LCEL to build the RAG pipeline.
 * Provides a FastAPI backend.
 * Provides a Streamlit user interface.
 
@@ -15,11 +15,11 @@ A Retrieval-Augmented Generation (RAG) application that answers questions about 
 
 * Python
 * LangChain
-* FAISS
-* Hugging Face Sentence Transformers
+* Scikit-learn (TF-IDF and cosine similarity)
 * Google Gemini
 * FastAPI
 * Streamlit
+* Hugging Face Datasets
 
 ## Dataset
 
@@ -30,9 +30,9 @@ The project uses the [Job Skill Set dataset](https://huggingface.co/datasets/bat
 ```text
 JobDescription Project/
 ├── app.py
-├── streamlit.py
+├── streamlit_app.py
 ├── rag_pipeline.ipynb
-├── faiss_index/
+├── tfidf_index.joblib
 ├── requirements.txt
 ├── .gitignore
 └── README.md
@@ -40,11 +40,11 @@ JobDescription Project/
 
 ## How It Works
 
-1. Job descriptions are split into smaller text chunks.
-2. Hugging Face embeddings convert text into numerical vectors.
-3. FAISS stores the vectors for similarity search.
-4. The retriever finds relevant documents for a question.
-5. LangChain passes the retrieved context to the Gemini model.
+1. Job descriptions are converted into LangChain Document objects.
+2. RecursiveCharacterTextSplitter divides documents into smaller text chunks.
+3. TF-IDF converts the chunks into numerical vectors.
+4. Cosine similarity retrieves relevant chunks for a question.
+5. LangChain passes the retrieved context and question to the Gemini model.
 6. Gemini generates an answer based on the retrieved context.
 7. FastAPI serves the backend, and Streamlit provides the interface.
 
@@ -62,8 +62,6 @@ Create a `.env` file and add your Google API key:
 GOOGLE_API_KEY=your_google_api_key
 ```
 
-Do not upload your API key to GitHub.
-
 ## Run the Application
 
 Start the FastAPI backend:
@@ -75,12 +73,12 @@ python -m uvicorn app:app --reload
 Open another terminal and start the Streamlit interface:
 
 ```bash
-python -m streamlit run streamlit.py
+python -m streamlit run streamlit_app.py
 ```
 
 API documentation:
 
-`http://127.0.0.1:8000/docs`
+http://127.0.0.1:8000/docs
 
 ## Example Questions
 

@@ -1,83 +1,54 @@
-
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from langchain_community.vectorstores import FAISS
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnablePassthrough
-from langchain_google_genai import ChatGoogleGenerativeAI
-from dotenv import load_dotenv
 import os
+import joblib
+from fastapi import FastAPI
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from sklearn.metrics.pairwise import cosine_similarity
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableLambda, RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
 
 load_dotenv()
 
-app = FastAPI(title="Job Description RAG Assistant")
+index = joblib.load("tfidf_index.joblib")
+vectorizer = index["vectorizer"]
+tfidf_matrix = index["matrix"]
+chunks = index["chunks"]
 
-# Load FAISS database
+model = ChatGoogleGenerativeAI(model="gemini-3.5-flash", google_api_key=os.getenv("GOOGLE_API_KEY"), temperature=0)
 
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
+def retrieve_context(question):
+    scores = cosine_similarity(vectorizer.transform([question]), tfidf_matrix).flatten()
+    top_indices = scores.argsort()[::-1][:4]
 
-embeddings = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/all-MiniLM-L6-v2",
-    model_kwargs={"device": "cpu"},
-    encode_kwargs={"batch_size": 1}
-)
+    return "\n\n".join(chunks[i].page_content
+        for i in top_indices if scores[i] > 0
+    )
 
-vector_store = FAISS.load_local(
-    "faiss_index",
-    embeddings,
-    allow_dangerous_deserialization=True
-)
+prompt = ChatPromptTemplate.from_template("""
+Answer using only the context. If unavailable, say so.
 
-retriever = vector_store.as_retriever(
-    search_type="similarity",
-    search_kwargs={"k": 4}
-)
+Context: {context}
+Question: {question}
+""")
 
-prompt = ChatPromptTemplate.from_template(  """
-    Answer the question using only the given context.
-    Return only the direct answer.
-    Do not include greetings, introductions, signatures,
-    or closing statements.
-    If the answer is unavailable in the context, say so. 
-    Context: {context}
-    Question: {question}""" )
-
-model = ChatGoogleGenerativeAI(
-    model="gemini-3.6-flash"
-)
-
-# Build the RAG pipeline:
 rag_chain = (
     {
-        "context": retriever ,
+        "context": RunnableLambda(retrieve_context),
         "question": RunnablePassthrough()
-    }
-    |prompt
-    | model
+    }| prompt| model| StrOutputParser()
 )
 
-print("RAG pipeline loaded successfully!")
-
+app = FastAPI()
 
 class Question(BaseModel):
     question: str
 
-# Home route
 @app.get("/")
 def home():
-    return {"message": "Job Description RAG API is working"}
-
+    return {"message": "RAG API is running"}
 
 @app.post("/ask")
-def ask_question(data: Question):
-    try:
-        response = rag_chain.invoke(data.question)
-
-        return {
-            "question": data.question,
-            "answer": response.content[0]["text"]
-        }
-
-    except Exception as e:
-       raise HTTPException(status_code=500, detail=str(e))
+def ask(data: Question):
+    return {"answer": rag_chain.invoke(data.question)}
