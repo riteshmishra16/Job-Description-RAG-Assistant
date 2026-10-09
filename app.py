@@ -18,13 +18,30 @@ chunks = index["chunks"]
 
 model = ChatGoogleGenerativeAI(model="gemini-3.5-flash", google_api_key=os.getenv("GOOGLE_API_KEY"), temperature=0)
 
-def retrieve_context(question):
-    scores = cosine_similarity(vectorizer.transform([question]), tfidf_matrix).flatten()
-    top_indices = scores.argsort()[::-1][:4]
+def retrieve(question):
+    scores = cosine_similarity(
+        vectorizer.transform([question]),
+        tfidf_matrix
+    ).flatten()
 
-    return "\n\n".join(chunks[i].page_content
-        for i in top_indices if scores[i] > 0
-    )
+    ids = scores.argsort()[::-1][:4]
+
+    relevant_ids = [
+        i for i in ids if scores[i] > 0
+    ]
+
+    context = []
+    for i in relevant_ids:
+        chunk = chunks[i]
+        metadata = chunk.metadata
+
+        context.append(
+            f"Job Title: {metadata.get('job_title', '')}\n"
+            f"Category: {metadata.get('category', '')}\n"
+            f"Skills: {metadata.get('job_skill_set', '')}\n"
+            f"Description: {chunk.page_content}"
+        )
+    return "\n\n".join(context)
 
 prompt = ChatPromptTemplate.from_template("""
 Answer using only the context. If unavailable, say so.
@@ -35,7 +52,7 @@ Question: {question}
 
 rag_chain = (
     {
-        "context": RunnableLambda(retrieve_context),
+        "context": RunnableLambda(retrieve),
         "question": RunnablePassthrough()
     }| prompt| model| StrOutputParser()
 )
