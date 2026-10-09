@@ -30,7 +30,7 @@ The project uses the [Job Skill Set dataset](https://huggingface.co/datasets/bat
 ```text
 JobDescription Project/
 ├── app.py
-├── streamlit_app.py
+├── streamlit.py
 ├── rag_pipeline.ipynb
 ├── tfidf_index.joblib
 ├── requirements.txt
