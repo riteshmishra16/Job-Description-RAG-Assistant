@@ -9,29 +9,45 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 
+
+# Load environment variables
 load_dotenv()
 
-index = joblib.load("tfidf_index.joblib")
+# Load the saved TF-IDF index
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+index_path = os.path.join(BASE_DIR, "tfidf_index.joblib")
+
+index = joblib.load(index_path)
+
 vectorizer = index["vectorizer"]
 tfidf_matrix = index["matrix"]
 chunks = index["chunks"]
 
-model = ChatGoogleGenerativeAI(model="gemini-3.5-flash", google_api_key=os.getenv("GOOGLE_API_KEY"), temperature=0)
 
+# Configure Gemini
+api_key = os.getenv("GOOGLE_API_KEY")
+
+if not api_key:
+    raise ValueError("GOOGLE_API_KEY is missing.")
+
+model = ChatGoogleGenerativeAI(model="gemini-3.5-flash",google_api_key=api_key,temperature=0)
+
+
+# Retrieve relevant job descriptions
 def retrieve(question):
-    scores = cosine_similarity(
-        vectorizer.transform([question]),
-        tfidf_matrix
-    ).flatten()
 
-    ids = scores.argsort()[::-1][:4]
+    question_vector = vectorizer.transform([question])
+    scores = cosine_similarity(question_vector,tfidf_matrix).flatten()
 
-    relevant_ids = [
-        i for i in ids if scores[i] > 0
-    ]
+    top_indices = scores.argsort()[::-1][:6]
 
     context = []
-    for i in relevant_ids:
+
+    for i in top_indices:
+
+        if scores[i] <= 0:
+            continue
+
         chunk = chunks[i]
         metadata = chunk.metadata
 
@@ -41,15 +57,44 @@ def retrieve(question):
             f"Skills: {metadata.get('job_skill_set', '')}\n"
             f"Description: {chunk.page_content}"
         )
-    return "\n\n".join(context)
 
+    result = "\n\n".join(context)
+
+    # Debug information for Render logs
+    print("Question:", question)
+    print("Top similarity score:", float(scores[top_indices[0]]))
+    print("Retrieved context length:", len(result))
+
+    return result
+
+
+# Answer generation prompt
 prompt = ChatPromptTemplate.from_template("""
-Answer using only the context. If unavailable, say so.
+You are a helpful Job Description Assistant.
 
-Context: {context}
-Question: {question}
+Answer the question using the relevant information in the context.
+
+Rules:
+- Give only the final answer in clear, simple language.
+- Do not display metadata labels such as Job Title, Category,
+  Skills, or Description.
+- Do not repeat the full context.
+- Use relevant skills and responsibilities from the job descriptions.
+- Combine information from multiple relevant descriptions when useful.
+- Do not invent facts or unsupported details.
+- Say "Information not available in the job descriptions."
+  only when the context contains no relevant information
+  to answer the question.
+
+Context:{context}
+
+Question:{question}
+
+Final answer:
 """)
 
+
+# RAG chain: retrieval -> prompt -> Gemini -> answer
 rag_chain = (
     {
         "context": RunnableLambda(retrieve),
@@ -57,10 +102,14 @@ rag_chain = (
     }| prompt| model| StrOutputParser()
 )
 
-app = FastAPI()
+
+# FastAPI application
+app = FastAPI(title="Job Description RAG Assistant")
+
 
 class Question(BaseModel):
     question: str
+
 
 @app.get("/")
 def home():
@@ -68,4 +117,5 @@ def home():
 
 @app.post("/ask")
 def ask(data: Question):
-    return {"answer": rag_chain.invoke(data.question)}
+    answer = rag_chain.invoke(data.question)
+    return {"answer": answer}
