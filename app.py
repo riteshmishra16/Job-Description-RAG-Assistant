@@ -82,9 +82,6 @@ Rules:
 - Use relevant skills and responsibilities from the job descriptions.
 - Combine information from multiple relevant descriptions when useful.
 - Do not invent facts or unsupported details.
-- Say "Information not available in the job descriptions."
-  only when the context contains no relevant information
-  to answer the question.
 
 Context:{context}
 
